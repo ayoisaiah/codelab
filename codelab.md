@@ -1,8 +1,10 @@
-summary: Build a Chrome extension that uses the Gemini API to instantly create
-Google Calendar events from any text you select on a web page. id:
-building-extensions-with-ai categories: Web, AI environments: Web status: Draft
-feedback link: https://github.com/user/quick-event-extension/issues authors:
-Ayooluwa Isaiah analytics account:
+summary: Build a Chrome extension that uses the Gemini API to instantly create Google Calendar events from any text you select on a web page. 
+id: building-extensions-with-ai 
+categories: Web, AI environments: 
+Web status: Draft
+feedback link: https://github.com/user/quick-event-extension/issues 
+authors: Ayooluwa Isaiah 
+analytics account:
 
 # Building Browser Extensions with AI
 
@@ -631,10 +633,9 @@ Notice how clean this is:
   `YYYY-MM-DD` and times in `HH:MM` format, converting to the Google Calendar
   format is just string manipulation. No date parsing library needed.
 
-Positive : Let AI do what AI is good at (understanding natural language,
-extracting meaning from messy text). Let code do what code is good at
-(formatting strings, building URLs, handling null values). Draw the line
-clearly.
+Let AI do what AI is good at (understanding natural language, extracting meaning
+from messy text). Let code do what code is good at (formatting strings, building
+URLs, handling null values).
 
 ## Try It Out
 
@@ -644,25 +645,21 @@ Your extension is now complete. Let's test it end to end.
 
 1. Reload the extension at `chrome://extensions`
 2. Make sure you've set your API key in the extension options
-3. Go to any web page with event information. Here's some text you can try —
-   paste it anywhere or find a real event page:
-
-> **DevFest Kaduna 2025** — Join us on October 18, 2025 from 10:00 AM to 6:00 PM
-> at AREWA House, 1 Rabah Road, Kaduna, 800283. DevFest Kaduna is for everyone,
-> from beginners to seasoned professionals.
-
+3. Go to any web page with event information like:
+   [Build With AI Ilorin 2026](https://gdg.community.dev/events/details/google-gdg-ilorin-presents-build-with-ai-ilorin-2026/)
 4. Highlight the event text
 5. Right-click → **Create Calendar Event**
 6. Google Calendar should open in a new tab with the event details pre-filled!
 
 ### Verify your results
 
-- ▢ The title is "DevFest Kaduna 2025"
-- ▢ The date is October 18, 2025
-- ▢ The start time is 10:00
-- ▢ The end time is 18:00
-- ▢ The location includes "AREWA House, 1 Rabah Road, Kaduna"
-- ▢ The description is populated
+- The title is "Build With AI Ilorin 2026"
+- The date is March 28, 2026
+- The start time is 09:00
+- The end time is 15:30
+- The location includes "Silver Gate Hotel and Suites, Olorunhoje Street,
+  Ilorin, 240281"
+- The description is populated
 
 ### Try different event formats
 
