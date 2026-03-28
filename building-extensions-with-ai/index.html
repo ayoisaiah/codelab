@@ -1,0 +1,692 @@
+
+<!doctype html>
+
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#4F7DC9">
+  <meta charset="UTF-8">
+  <title>Building Browser Extensions with AI</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
+  <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
+  <style>
+    .success {
+      color: #1e8e3e;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <google-codelab-analytics gaid="UA-49880327-14" ga4id=""></google-codelab-analytics>
+  <google-codelab codelab-gaid=""
+                  codelab-ga4id=""
+                  id="building-extensions-with-ai"
+                  title="Building Browser Extensions with AI"
+                  environment="web"
+                  feedback-link="https://github.com/user/quick-event-extension/issues">
+    
+      <google-codelab-step label="Introduction" duration="2">
+        <h2 is-upgraded>The Problem</h2>
+<p>You&#39;re browsing the web and you spot an event you want to attend. The date, time, location, and description are all right there on the page. But to get it into your calendar, you have to:</p>
+<ol type="1">
+<li>Copy the title</li>
+<li>Open Google Calendar</li>
+<li>Create a new event</li>
+<li>Paste the title</li>
+<li>Go back to the page, find the date, copy it</li>
+<li>Go back to Calendar, set the date</li>
+<li>Repeat for the time, location, description...</li>
+</ol>
+<p>This is tedious, error-prone, and something you probably do every week. What if your browser could just do it for you?</p>
+<h2 is-upgraded>What you&#39;ll build</h2>
+<p>In this codelab, you&#39;ll build a Chrome extension called <strong>Quick Event</strong> that lets you highlight any event description on a web page, right-click, and instantly open Google Calendar with all the event details pre-filled — powered by the Gemini API.</p>
+<h2 class="checklist" is-upgraded>What you&#39;ll learn</h2>
+<ul class="checklist">
+<li>How to create a Chrome extension from scratch using Manifest V3</li>
+<li>How to capture user-selected text using context menus</li>
+<li>How to call the Gemini API from an extension to extract structured data</li>
+<li>How to craft effective prompts for reliable JSON extraction</li>
+<li>How to build an options page that lets users provide their own API key</li>
+<li>How to construct Google Calendar URLs programmatically</li>
+</ul>
+<h2 is-upgraded>What you&#39;ll need</h2>
+<ul>
+<li>Google Chrome (version 138 or later)</li>
+<li>A text editor or IDE</li>
+<li>Basic knowledge of HTML, CSS, and JavaScript</li>
+<li>A Gemini API key (free — we&#39;ll walk through getting one)</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Getting Set Up" duration="5">
+        <h2 is-upgraded>Get a Gemini API key</h2>
+<p>The Gemini API offers a generous free tier that&#39;s perfect for this project. You&#39;ll need an API key to use it.</p>
+<ol type="1">
+<li>Go to <a href="https://aistudio.google.com" target="_blank">Google AI Studio</a></li>
+<li>Sign in with your Google account</li>
+<li>Click <strong>&#34;Get API key&#34;</strong> in the left navigation</li>
+<li>Click <strong>&#34;Create API key&#34;</strong> and select a project (or create a new one)</li>
+<li>Copy your API key and save it somewhere safe</li>
+</ol>
+<p>Negative : Treat your API key like a password. Never commit it to a public repository, share it online, or hardcode it in published extension code. In this codelab, users will enter their own key through a secure options page.</p>
+<h2 is-upgraded>Verify your API key works</h2>
+<p>To test your key, run this in your terminal (replace <code>YOUR_API_KEY</code> with your actual key):</p>
+<pre>curl &#34;https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent&#34; \
+  -H &#34;x-goog-api-key: YOUR_API_KEY&#34; \
+  -H &#34;Content-Type: application/json&#34; \
+  -X POST \
+  -d &#39;{
+    &#34;contents&#34;: [{
+      &#34;parts&#34;: [{&#34;text&#34;: &#34;Say hello in three languages&#34;}]
+    }]
+  }&#39;
+</pre>
+<p>If everything works, you&#39;ll see a JSON response with the model&#39;s output.</p>
+<h2 is-upgraded>Get the code</h2>
+<p>We&#39;ve set up a starter repository with the project scaffolding. Clone it and open it in your editor:</p>
+<pre>git clone https://github.com/ayoisaiah/quick-event-extension.git
+cd quick-event-extension
+</pre>
+<p>The starter repo contains the basic file structure with placeholder comments where you&#39;ll add code throughout this codelab.</p>
+<h2 is-upgraded>Load the extension in Chrome</h2>
+<ol type="1">
+<li>Open Chrome and navigate to <code>chrome://extensions</code></li>
+<li>Enable <strong>Developer mode</strong> using the toggle in the top right corner</li>
+<li>Click <strong>&#34;Load unpacked&#34;</strong></li>
+<li>Select the <code>quick-event-extension</code> folder</li>
+<li>You should see &#34;Quick Event&#34; appear in your extensions list</li>
+</ol>
+<p>You&#39;ll reload the extension each time you make changes by clicking the refresh icon on the extension card.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Understanding the Extension Anatomy" duration="3">
+        <p>Before we start building, let&#39;s understand how a Chrome extension is structured. Open the project folder — here&#39;s what each file does:</p>
+<pre>quick-event-extension/
+├── manifest.json        # The extension&#39;s ID card
+├── background.js        # The brain — runs in the background
+├── options.html         # Settings page for the API key
+├── options.js           # Logic for the settings page
+└── icons/
+    ├── icon16.png
+    ├── icon32.png
+    ├── icon48.png
+    └── icon128.png
+</pre>
+<h2 is-upgraded>manifest.json — The Extension&#39;s ID Card</h2>
+<p>Every Chrome extension starts with a <code>manifest.json</code> file. It tells Chrome everything it needs to know: what permissions the extension needs, what scripts to run, and what the extension looks like.</p>
+<p>Create or update your <code>manifest.json</code> with the following:</p>
+<pre><code language="language-json" class="language-json">{
+  &#34;manifest_version&#34;: 3,
+  &#34;name&#34;: &#34;Quick Event&#34;,
+  &#34;version&#34;: &#34;1.0&#34;,
+  &#34;description&#34;: &#34;Highlight event text on any web page and create a Google Calendar event instantly with AI.&#34;,
+  &#34;permissions&#34;: [&#34;contextMenus&#34;, &#34;storage&#34;],
+  &#34;background&#34;: {
+    &#34;service_worker&#34;: &#34;background.js&#34;
+  },
+  &#34;action&#34;: {
+    &#34;default_icon&#34;: {
+      &#34;16&#34;: &#34;icons/icon16.png&#34;,
+      &#34;48&#34;: &#34;icons/icon48.png&#34;,
+      &#34;128&#34;: &#34;icons/icon128.png&#34;
+    },
+    &#34;default_title&#34;: &#34;Quick Event&#34;
+  },
+  &#34;options_ui&#34;: {
+    &#34;page&#34;: &#34;options.html&#34;,
+    &#34;open_in_tab&#34;: false
+  },
+  &#34;icons&#34;: {
+    &#34;16&#34;: &#34;icons/icon16.png&#34;,
+    &#34;32&#34;: &#34;icons/icon32.png&#34;,
+    &#34;48&#34;: &#34;icons/icon48.png&#34;,
+    &#34;128&#34;: &#34;icons/icon128.png&#34;
+  }
+}
+</code></pre>
+<p>Let&#39;s break down the key parts:</p>
+<ul>
+<li><strong><code>manifest_version: 3</code></strong> — We&#39;re using the latest Manifest V3 format, which is required for new extensions.</li>
+<li><strong><code>permissions</code></strong> — We request only what we need: <code>contextMenus</code> to add a right-click menu item, and <code>storage</code> to save the user&#39;s API key.</li>
+<li><strong><code>background.service_worker</code></strong> — Our background script runs as a service worker. The <code>"type": "module"</code> allows us to use ES module imports.</li>
+<li><strong><code>options_ui</code></strong> — This gives our extension a settings page where users can enter their API key.</li>
+</ul>
+<p>Positive: Request only the permissions you need. Fewer permissions means more trust from users, which means more installs. This extension doesn&#39;t need access to any web page content or browsing history.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Building the Options Page" duration="5">
+        <p>Before we can call the Gemini API, users need a way to provide their API key. We&#39;ll build a simple options page for this.</p>
+<h2 is-upgraded>Create the options HTML</h2>
+<pre><code language="language-html" class="language-html">&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+  &lt;head&gt;
+    &lt;meta charset=&#34;utf-8&#34; /&gt;
+    &lt;title&gt;Quick Event Settings&lt;/title&gt;
+    &lt;style&gt;
+      body {
+        font-family: system-ui, sans-serif;
+        padding: 20px;
+        max-width: 480px;
+        color: #333;
+      }
+
+      h1 {
+        font-size: 18px;
+        margin-bottom: 4px;
+      }
+
+      p {
+        font-size: 13px;
+        color: #666;
+        margin-top: 0;
+      }
+
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      input[type=&#39;text&#39;] {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: monospace;
+        box-sizing: border-box;
+      }
+
+      button {
+        margin-top: 12px;
+        padding: 8px 20px;
+        background: #1a73e8;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #1557b0;
+      }
+
+      .status {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #188038;
+      }
+
+      a {
+        color: #1a73e8;
+      }
+    &lt;/style&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;h1&gt;Quick Event Settings&lt;/h1&gt;
+    &lt;p&gt;
+      Enter your Gemini API key to enable AI-powered event extraction. You can
+      get a free key from
+      &lt;a href=&#34;https://aistudio.google.com/apikey&#34; target=&#34;_blank&#34;&gt;
+        Google AI Studio&lt;/a
+      &gt;.
+    &lt;/p&gt;
+
+    &lt;label for=&#34;apiKey&#34;&gt;Gemini API Key&lt;/label&gt;
+    &lt;input type=&#34;text&#34; id=&#34;apiKey&#34; placeholder=&#34;Enter your API key&#34; /&gt;
+    &lt;button id=&#34;save&#34;&gt;Save&lt;/button&gt;
+    &lt;div id=&#34;status&#34; class=&#34;status&#34;&gt;&lt;/div&gt;
+
+    &lt;script src=&#34;options.js&#34;&gt;&lt;/script&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<h2 is-upgraded>Create the options logic</h2>
+<pre><code language="language-js" class="language-js">const apiKeyInput = document.getElementById(&#39;apiKey&#39;);
+const saveButton = document.getElementById(&#39;save&#39;);
+const status = document.getElementById(&#39;status&#39;);
+
+// Load the saved key when the page opens
+chrome.storage.sync.get(&#39;geminiApiKey&#39;, (data) =&gt; {
+  if (data.geminiApiKey) {
+    apiKeyInput.value = data.geminiApiKey;
+  }
+});
+
+// Save the key when the user clicks Save
+saveButton.addEventListener(&#39;click&#39;, () =&gt; {
+  const apiKey = apiKeyInput.value.trim();
+
+  if (!apiKey) {
+    status.textContent = &#39;Please enter an API key.&#39;;
+    status.style.color = &#39;#d93025&#39;;
+    return;
+  }
+
+  chrome.storage.sync.set({ geminiApiKey: apiKey }, () =&gt; {
+    status.textContent = &#39;Settings saved.&#39;;
+    status.style.color = &#39;#188038&#39;;
+    setTimeout(() =&gt; {
+      status.textContent = &#39;&#39;;
+    }, 2000);
+  });
+});
+</code></pre>
+<p>A few things to notice:</p>
+<ul>
+<li>We use <strong><code>chrome.storage.sync</code></strong> instead of <code>localStorage</code>. This is the Chrome extension storage API — it syncs across the user&#39;s devices and is available in service workers (where <code>localStorage</code> is not).</li>
+<li>The key is saved in the user&#39;s local extension storage, never sent anywhere except to the Gemini API when making a request.</li>
+</ul>
+<h2 is-upgraded>Try it out</h2>
+<ol type="1">
+<li>Reload your extension at <code>chrome://extensions</code></li>
+<li>Click the <strong>&#34;Details&#34;</strong> button on the Quick Event card</li>
+<li>Click <strong>&#34;Extension options&#34;</strong> (or right-click the extension icon → Options)</li>
+<li>Enter your Gemini API key and click Save</li>
+<li>▢ Verify you see the &#34;Settings saved.&#34; confirmation</li>
+</ol>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Capturing Context from the Page" duration="5">
+        <p>Now let&#39;s build the core interaction: the user highlights text on a web page, right-clicks, and sees a &#34;Create Calendar Event&#34; option.</p>
+<p>Open <code>background.js</code> and add the context menu setup:</p>
+<pre><code language="language-js" class="language-js">// Create the right-click menu item when the extension is installed
+chrome.runtime.onInstalled.addListener(() =&gt; {
+  chrome.contextMenus.create({
+    id: &#39;createCalendarEvent&#39;,
+    title: &#39;Create Calendar Event&#39;,
+    contexts: [&#39;selection&#39;],
+  });
+});
+</code></pre>
+<p>Let&#39;s break this down:</p>
+<ul>
+<li><strong><code>onInstalled</code></strong> — This runs once when the extension is first installed (or updated). It&#39;s the right place to set up one-time things like context menus.</li>
+<li><strong><code>id</code></strong> — A unique identifier we&#39;ll use to know which menu item was clicked.</li>
+<li><strong><code>title</code></strong> — The text shown in the right-click menu.</li>
+<li><strong><code>contexts: ['selection']</code></strong> — This is important. The menu item only appears when the user has selected (highlighted) text. If nothing is selected, the option won&#39;t show up. This is good UX — don&#39;t show options that don&#39;t apply.</li>
+</ul>
+<p>Now add the click handler that receives the selected text:</p>
+<pre><code language="language-js" class="language-js">// Listen for clicks on our context menu item
+chrome.contextMenus.onClicked.addListener(async (info) =&gt; {
+  if (info.menuItemId === &#39;createCalendarEvent&#39;) {
+    const selectedText = info.selectionText;
+
+    try {
+      const event = await extractEventDetails(selectedText);
+      const calendarUrl = buildCalendarUrl(event);
+      chrome.tabs.create({ url: calendarUrl });
+    } catch (error) {
+      console.error(&#39;Failed to create event:&#39;, error);
+    }
+  }
+});
+</code></pre>
+<p>This is the entire flow of the extension in five lines:</p>
+<ol type="1">
+<li>Get the selected text</li>
+<li>Send it to the AI to extract event details</li>
+<li>Build a Google Calendar URL from those details</li>
+<li>Open the URL in a new tab</li>
+</ol>
+<p>We haven&#39;t written <code>extractEventDetails</code> or <code>buildCalendarUrl</code> yet — that&#39;s coming next.</p>
+<h2 is-upgraded>Try it out</h2>
+<ol type="1">
+<li>Reload your extension at <code>chrome://extensions</code></li>
+<li>Go to any web page and highlight some text</li>
+<li>Right-click — you should see &#34;Create Calendar Event&#34; in the context menu</li>
+<li>Clicking it will fail for now (because our functions don&#39;t exist yet), but check the console in the service worker to confirm the click handler fires</li>
+</ol>
+<p>Positive : To see console output from your background script, go to <code>chrome://extensions</code>, find Quick Event, and click the <strong>&#34;service worker&#34;</strong> link. This opens DevTools for the extension&#39;s background script.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Calling the Gemini API" duration="8">
+        <p>This is the technical heart of the extension. We&#39;re going to send the selected text to the Gemini API and ask it to extract structured event details as JSON.</p>
+<h2 is-upgraded>Helper: Get the API key from storage</h2>
+<p>First, we need a way to retrieve the API key the user saved in the options page. Add this helper function to <code>background.js</code>:</p>
+<pre><code language="language-js" class="language-js">function getApiKey() {
+  return new Promise((resolve, reject) =&gt; {
+    chrome.storage.sync.get(&#39;geminiApiKey&#39;, (data) =&gt; {
+      if (data.geminiApiKey) {
+        resolve(data.geminiApiKey);
+      } else {
+        reject(
+          new Error(
+            &#39;No API key found. Please set your Gemini API key in the extension options.&#39;
+          )
+        );
+      }
+    });
+  });
+}
+</code></pre>
+<h2 is-upgraded>The Gemini API call</h2>
+<p>Now add the function that calls the Gemini API. We&#39;re using the REST API directly — no SDK needed:</p>
+<pre><code language="language-js" class="language-js">async function callGemini(prompt) {
+  const apiKey = await getApiKey();
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+    {
+      method: &#39;POST&#39;,
+      headers: {
+        &#39;Content-Type&#39;: &#39;application/json&#39;,
+        &#39;x-goog-api-key&#39;: apiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: &#39;application/json&#39;,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(
+      error?.error?.message ?? `Gemini API error: ${response.status}`
+    );
+  }
+
+  const data = await response.json();
+  return data.candidates[0].content.parts[0].text;
+}
+</code></pre>
+<p>Let&#39;s unpack the important parts:</p>
+<ul>
+<li><strong><code>gemini-2.5-flash</code></strong> — Google&#39;s fast, capable model. It&#39;s available on the free tier and is more than powerful enough for text extraction.</li>
+<li><strong><code>temperature: 0</code></strong> — We want deterministic, consistent output. This is data extraction, not creative writing. A temperature of 0 means the model will give the same answer every time for the same input.</li>
+<li><strong><code>responseMimeType: 'application/json'</code></strong> — This tells the Gemini API to return valid JSON. This is a huge improvement over hoping the model outputs parseable JSON — the API enforces it.</li>
+<li><strong><code>x-goog-api-key</code></strong> — The API key goes in the request header, not in the URL query string. This is the recommended approach.</li>
+</ul>
+<p>Positive : We&#39;re calling the Gemini API directly from the extension&#39;s background service worker using <code>fetch</code>. No server required. The API key is stored locally in the user&#39;s browser and sent directly to Google&#39;s API. This keeps the architecture simple — it&#39;s just the extension and the API.</p>
+<h2 is-upgraded>The extraction function</h2>
+<p>Now add the function that constructs the prompt and parses the result:</p>
+<pre><code language="language-js" class="language-js">async function extractEventDetails(text) {
+  const prompt = `
+Extract the event details from the following text. Return a JSON object with these fields:
+
+- &#34;title&#34;: the name of the event
+- &#34;description&#34;: a brief description
+- &#34;location&#34;: the venue or address
+- &#34;start_date&#34;: start date in YYYY-MM-DD format
+- &#34;start_time&#34;: start time in HH:MM format (24-hour)
+- &#34;end_date&#34;: end date in YYYY-MM-DD format
+- &#34;end_time&#34;: end time in HH:MM format (24-hour)
+
+Rules:
+- If no year is provided, assume ${new Date().getFullYear()}.
+- If no end time is provided, set it to one hour after the start time.
+- If a field cannot be determined from the text, set its value to null.
+- Do not convert or adjust times. Use them exactly as written.
+
+Text:
+${text}
+  `.trim();
+
+  const result = await callGemini(prompt);
+  return JSON.parse(result);
+}
+</code></pre>
+<h2 is-upgraded>Why this prompt works</h2>
+<p>This prompt is carefully designed. Let&#39;s look at each decision:</p>
+<ol type="1">
+<li><strong>Explicit field names and formats</strong> — We tell the model exactly what fields we want and exactly what format each should be in (<code>YYYY-MM-DD</code>, <code>HH:MM</code> 24-hour). Without this, the model might return &#34;October 18th&#34; or &#34;6pm&#34; — formats that are hard to parse reliably in code.</li>
+<li><strong>Rules for edge cases</strong> — Real event text is messy. It often doesn&#39;t include the year. Sometimes there&#39;s no end time. The prompt handles these cases explicitly instead of hoping the model guesses correctly.</li>
+<li><strong>&#34;Do not convert or adjust times&#34;</strong> — Without this, the model might helpfully convert time zones or switch between 12-hour and 24-hour formats. We don&#39;t want that — we want the raw times as written.</li>
+<li><strong><code>null</code></strong><strong> for missing fields</strong> — This gives us a consistent data shape. Our code can check for <code>null</code> instead of handling missing keys, empty strings, or the model inventing values.</li>
+<li><strong><code>responseMimeType: 'application/json'</code></strong> — In the API call, we told Gemini to return valid JSON. Combined with our prompt, this eliminates the need for messy JSON-fixing helpers. The API guarantees valid JSON output.</li>
+</ol>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Building the Calendar URL" duration="5">
+        <p>Now we need to turn the structured event data into a Google Calendar URL. Google Calendar accepts pre-filled event details through URL parameters.</p>
+<p>The URL format looks like this:</p>
+<pre>https://calendar.google.com/calendar/render?action=TEMPLATE
+  &amp;text=Event+Title
+  &amp;dates=20251018T100000/20251018T180000
+  &amp;details=Event+description
+  &amp;location=Event+venue
+</pre>
+<p>The <code>dates</code> parameter uses a specific format: <code>YYYYMMDDTHHmmss/YYYYMMDDTHHmmss</code> (start/end).</p>
+<p>Add the URL builder function to <code>background.js</code>:</p>
+<pre><code language="language-js" class="language-js">function buildCalendarUrl(event) {
+  const url = new URL(&#39;https://calendar.google.com/calendar/render&#39;);
+
+  const params = url.searchParams;
+  params.set(&#39;action&#39;, &#39;TEMPLATE&#39;);
+
+  if (event.title) {
+    params.set(&#39;text&#39;, event.title);
+  }
+
+  if (event.description) {
+    params.set(&#39;details&#39;, event.description);
+  }
+
+  if (event.location) {
+    params.set(&#39;location&#39;, event.location);
+  }
+
+  if (event.start_date &amp;&amp; event.start_time) {
+    const startFormatted = formatDateTime(event.start_date, event.start_time);
+    const endFormatted = formatDateTime(
+      event.end_date ?? event.start_date,
+      event.end_time ?? event.start_time
+    );
+    params.set(&#39;dates&#39;, `${startFormatted}/${endFormatted}`);
+  }
+
+  return url.toString();
+}
+
+function formatDateTime(date, time) {
+  // date: &#34;YYYY-MM-DD&#34;, time: &#34;HH:MM&#34;
+  // output: &#34;YYYYMMDDTHHmmss&#34;
+  const [year, month, day] = date.split(&#39;-&#39;);
+  const [hours, minutes] = time.split(&#39;:&#39;);
+  return `${year}${month}${day}T${hours}${minutes}00`;
+}
+</code></pre>
+<p>Notice how clean this is:</p>
+<ul>
+<li><strong>We use the </strong><strong><code>URL</code></strong><strong> API</strong> to construct the URL safely. No manual string concatenation that could break with special characters.</li>
+<li><strong>We handle null values gracefully</strong> — if the AI couldn&#39;t determine the end date, we fall back to the start date.</li>
+<li><strong><code>formatDateTime</code></strong><strong> is trivial</strong> — because we told the AI to give us dates in <code>YYYY-MM-DD</code> and times in <code>HH:MM</code> format, converting to the Google Calendar format is just string manipulation. No date parsing library needed.</li>
+</ul>
+<p>Positive : Let AI do what AI is good at (understanding natural language, extracting meaning from messy text). Let code do what code is good at (formatting strings, building URLs, handling null values). Draw the line clearly.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Try It Out" duration="3">
+        <p>Your extension is now complete. Let&#39;s test it end to end.</p>
+<ol type="1">
+<li>Reload the extension at <code>chrome://extensions</code></li>
+<li>Make sure you&#39;ve set your API key in the extension options</li>
+<li>Go to any web page with event information. Here&#39;s some text you can try — paste it anywhere or find a real event page:</li>
+</ol>
+<p><strong>DevFest Kaduna 2025</strong> — Join us on October 18, 2025 from 10:00 AM to 6:00 PM at AREWA House, 1 Rabah Road, Kaduna, 800283. DevFest Kaduna is for everyone, from beginners to seasoned professionals.</p>
+<ol type="1" start="4">
+<li>Highlight the event text</li>
+<li>Right-click → <strong>Create Calendar Event</strong></li>
+<li>Google Calendar should open in a new tab with the event details pre-filled!</li>
+</ol>
+<h2 is-upgraded>Verify your results</h2>
+<ul>
+<li>▢ The title is &#34;DevFest Kaduna 2025&#34;</li>
+<li>▢ The date is October 18, 2025</li>
+<li>▢ The start time is 10:00</li>
+<li>▢ The end time is 18:00</li>
+<li>▢ The location includes &#34;AREWA House, 1 Rabah Road, Kaduna&#34;</li>
+<li>▢ The description is populated</li>
+</ul>
+<h2 is-upgraded>Try different event formats</h2>
+<p>Test with different kinds of event text to see how the AI handles variety:</p>
+<ul>
+<li>A meetup page with informal date formatting (&#34;next Saturday at 3pm&#34;)</li>
+<li>An event in a different language</li>
+<li>An event with minimal information (just a title and date)</li>
+<li>An event with lots of extra text around the details</li>
+</ul>
+<p>Negative : The AI may not always extract every field correctly, especially from very informal or ambiguous text. This is expected — AI is probabilistic, not deterministic. The prompt design minimizes errors, but edge cases will always exist.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="The Prompt Matters: A Comparison" duration="5">
+        <p>The prompt is the most important code in this entire extension. To illustrate why, let&#39;s look at an alternative approach that seems simpler but produces worse results.</p>
+<h2 is-upgraded>Approach A: What we built (AI extracts → code formats)</h2>
+<p>Our approach asks the AI to extract structured data as JSON, then uses JavaScript to build the Google Calendar URL.</p>
+<p><strong>Result:</strong> Correct event title, correct times (10:00–18:00), correct location, clean description.</p>
+<h2 is-upgraded>Approach B: Let the AI build the entire URL</h2>
+<p>An alternative approach is to ask the AI to construct the complete Google Calendar URL directly:</p>
+<pre><code language="language-js" class="language-js">// DON&#39;T DO THIS — shown for comparison only
+const prompt = `
+Analyze the text and construct a Google Calendar URL.
+The format is:
+https://calendar.google.com/calendar/render?action=TEMPLATE
+  &amp;text=[TITLE]&amp;dates=[START]/[END]
+  &amp;details=[DETAILS]&amp;location=[LOCATION]
+
+Return ONLY the URL. Here is the text:
+${text}
+`;
+</code></pre>
+<p><strong>Result:</strong> The title includes the location, times are wrong (06:00–07:00 instead of 10:00–18:00), description is truncated.</p>
+<h2 is-upgraded>Why does Approach B fail?</h2>
+<p>Because we asked the AI to do too many things at once:</p>
+<ol type="1">
+<li><strong>Understand the text</strong> (what it&#39;s good at ✅)</li>
+<li><strong>Extract structured fields</strong> (what it&#39;s good at ✅)</li>
+<li><strong>URL-encode special characters</strong> (unreliable ❌)</li>
+<li><strong>Format dates into YYYYMMDDTHHmmss</strong> (unreliable ❌)</li>
+<li><strong>Assemble URL parameters</strong> (unreliable ❌)</li>
+</ol>
+<p>Steps 3–5 are deterministic tasks with exact rules. AI models don&#39;t follow exact rules — they predict likely output. URL encoding and date formatting are precisely the kind of fiddly, rule-based operations where a model will make subtle mistakes.</p>
+<h2 is-upgraded>The principle</h2>
+<p><strong>Let AI do what AI is good at.</strong> Language understanding, extraction, classification, summarization — tasks where you need flexibility and judgment.</p>
+<p><strong>Let code do what code is good at.</strong> String formatting, URL construction, date manipulation, validation — tasks where you need precision and consistency.</p>
+<p>Draw the line between them clearly. In our extension, the line is: AI returns JSON, code does everything else.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Making It Production-Ready" duration="3">
+        <p>Our extension works, but a production-quality extension needs a few more things. Let&#39;s walk through what you&#39;d add to make this ready for real users.</p>
+<h2 is-upgraded>Error handling</h2>
+<p>Our current error handling logs to the console, which users will never see. In a real extension, you&#39;d want to show a notification:</p>
+<pre><code language="language-js" class="language-js">// Example: show a Chrome notification on error
+chrome.notifications.create({
+  type: &#39;basic&#39;,
+  iconUrl: &#39;icons/icon-128.png&#39;,
+  title: &#39;Quick Event&#39;,
+  message: &#39;Could not extract event details. Try selecting different text.&#39;,
+});
+</code></pre>
+<p>Positive : This requires adding the <code>"notifications"</code> permission to your manifest.</p>
+<h2 is-upgraded>Handle missing API key gracefully</h2>
+<p>If the user hasn&#39;t set their API key yet, the extension should guide them to the options page instead of failing silently:</p>
+<pre><code language="language-js" class="language-js">// In the click handler, before calling extractEventDetails:
+try {
+  await getApiKey();
+} catch {
+  chrome.runtime.openOptionsPage();
+  return;
+}
+</code></pre>
+<h2 is-upgraded>Security reminders</h2>
+<p>For a published extension, remember these principles:</p>
+<ul>
+<li><strong>Never hardcode API keys</strong> — we solved this with the options page.</li>
+<li><strong>Request only necessary permissions</strong> — our manifest only asks for <code>contextMenus</code> and <code>storage</code>.</li>
+<li><strong>Be transparent about data usage</strong> — your Chrome Web Store listing should explain that selected text is sent to the Gemini API for processing.</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="What&#39;s Next" duration="2">
+        <p>You&#39;ve built a fully functional AI-powered Chrome extension. Here are some ways to take it further.</p>
+<h2 is-upgraded>Explore Chrome&#39;s Built-in AI APIs</h2>
+<p>Chrome now ships several AI APIs that run entirely on-device — no API key, no internet required:</p>
+<ul>
+<li><strong>Summarizer API</strong> — Condense long content into key points</li>
+<li><strong>Translator API</strong> — Translate text between languages on-device</li>
+<li><strong>Language Detector API</strong> — Identify what language text is written in</li>
+<li><strong>Writer &amp; Rewriter APIs</strong> — Generate and refine text</li>
+<li><strong>Proofreader API</strong> — Grammar and spelling correction (origin trial)</li>
+<li><strong>Prompt API</strong> — Open-ended prompting with Gemini Nano (extensions only)</li>
+</ul>
+<p>These APIs are available from Chrome 138+ and are ideal for building extensions that work offline and preserve user privacy.</p>
+<h2 is-upgraded>Learn about WebMCP</h2>
+<p>WebMCP is a new proposal that lets web pages expose structured tools directly to AI agents in the browser. It&#39;s available behind a flag in Chrome Canary 146+. Think of it as the next evolution: instead of extensions scraping pages, pages will tell AI agents what actions are available.</p>
+<h2 is-upgraded>Resources</h2>
+<ul>
+<li><a href="https://developer.chrome.com/docs/ai" target="_blank">Chrome Built-in AI documentation</a></li>
+<li><a href="https://developer.chrome.com/docs/extensions" target="_blank">Chrome Extensions documentation</a></li>
+<li><a href="https://ai.google.dev/gemini-api/docs" target="_blank">Gemini API documentation</a></li>
+<li><a href="https://developer.chrome.com/docs/ai/built-in#get_started" target="_blank">Chrome Built-in AI Early Preview Program</a></li>
+<li><a href="https://github.com/user/quick-event-extension" target="_blank">Source code for this codelab</a></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Congratulations" duration="0">
+        <p>You&#39;ve built an AI-powered Chrome extension!</p>
+<p>You selected text on a web page, sent it to the Gemini API, received structured data back, and opened Google Calendar with the event pre-filled. Along the way, you learned:</p>
+<ul>
+<li>✅ How Chrome extensions are structured (manifest, background scripts, options pages)</li>
+<li>✅ How to capture user context with context menus</li>
+<li>✅ How to call the Gemini API from an extension using the REST endpoint</li>
+<li>✅ How to write effective prompts for structured data extraction</li>
+<li>✅ Why the boundary between AI and code matters</li>
+<li>✅ How to let users securely provide their own API key</li>
+</ul>
+<p>The extension you built today is about 100 lines of JavaScript. No frameworks, no build tools, no server. That&#39;s the beauty of browser extensions — they&#39;re just web technologies you already know, applied in a new context.</p>
+<p><strong>The only question is: what will you build next?</strong></p>
+<h2 is-upgraded>Further reading</h2>
+<ul>
+<li><a href="https://developer.chrome.com/docs/extensions/develop/migrate" target="_blank">Manifest V3 migration guide</a></li>
+<li><a href="https://github.com/GoogleChrome/chrome-extensions-samples" target="_blank">Chrome Extensions samples</a></li>
+<li><a href="https://ai.google.dev/gemini-api/docs/structured-output" target="_blank">Gemini API structured output</a></li>
+<li><a href="https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle" target="_blank">Service worker lifecycle</a></li>
+</ul>
+
+
+      </google-codelab-step>
+    
+  </google-codelab>
+
+  <script src="https://storage.googleapis.com/claat-public/native-shim.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/custom-elements.min.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/prettify.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/codelab-elements.js"></script>
+  <script src="//support.google.com/inapp/api.js"></script>
+
+</body>
+</html>
