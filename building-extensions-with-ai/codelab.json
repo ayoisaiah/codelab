@@ -3,7 +3,7 @@
   "format": "html",
   "prefix": "https://storage.googleapis.com",
   "mainga": "UA-49880327-14",
-  "updated": "2026-03-28T10:13:51+01:00",
+  "updated": "2026-05-09T09:11:14+01:00",
   "id": "building-extensions-with-ai",
   "duration": 38,
   "title": "Building Browser Extensions with AI",
@@ -11,12 +11,16 @@
   "summary": "Build a Chrome extension that uses the Gemini API to instantly create Google Calendar events from any text you select on a web page.",
   "source": "codelab.md",
   "theme": "",
-  "status": null,
+  "status": [
+    "draft"
+  ],
   "category": [
     "web",
-    "aienvironments:"
+    "ai"
   ],
-  "tags": [],
-  "feedback": "https://github.com/user/quick-event-extension/issues",
+  "tags": [
+    "web"
+  ],
+  "feedback": "https://github.com/ayoisaiah/quick-event-extension/issues",
   "url": "building-extensions-with-ai"
 }
