@@ -1,10 +1,11 @@
-summary: Build a Chrome extension that uses the Gemini API to instantly create Google Calendar events from any text you select on a web page.
-id: building-extensions-with-ai
-categories: Web, AI
-environments: Web
+summary: Build a Chrome extension that uses the Gemini API to instantly create Google Calendar events from any text you select on a web page. 
+id: building-extensions-with-ai 
+categories: Web, AI 
+environments: 
+Web 
 status: Draft
 feedback link: https://github.com/ayoisaiah/quick-event-extension/issues
-authors: Ayooluwa Isaiah
+authors: Ayooluwa Isaiah 
 analytics account:
 
 # Building Browser Extensions with AI
@@ -30,8 +31,8 @@ your browser could just do it for you?
 
 In this codelab, you'll build a Chrome extension called **Quick Event** that
 lets you highlight any event description on a web page, right-click, and
-instantly open Google Calendar with all the event details pre-filled, powered
-by the Gemini API.
+instantly open Google Calendar with all the event details pre-filled, powered by
+the Gemini API.
 
 Along the way, you'll learn how to:
 
@@ -64,7 +65,7 @@ You'll need an API key to use it.
 4. Click **"Create API key"** and select a project (or create a new one)
 5. Copy your API key and save it somewhere safe
 
-Negative : Treat your API key like a password. Never commit it to a public
+**Note**: Treat your API key like a password. Never commit it to a public
 repository, share it online, or hardcode it in published extension code. In this
 codelab, users will enter their own key through a secure options page.
 
@@ -74,7 +75,7 @@ To test your key, run this in your terminal (replace `YOUR_API_KEY` with your
 actual key):
 
 ```console
-curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent" \
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent" \
   -H "x-goog-api-key: YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -X POST \
@@ -133,9 +134,9 @@ quick-event-extension/
 
 ### manifest.json
 
-Every Chrome extension starts with a `manifest.json` file. It tells Chrome
-what permissions the extension needs, what scripts to run, and what the
-extension looks like.
+Every Chrome extension starts with a `manifest.json` file. It tells Chrome what
+permissions the extension needs, what scripts to run, and what the extension
+looks like.
 
 Create or update your `manifest.json` with the following:
 
@@ -145,7 +146,7 @@ Create or update your `manifest.json` with the following:
   "name": "Quick Event",
   "version": "1.0",
   "description": "Highlight event text on any web page and create a Google Calendar event instantly with AI.",
-  "permissions": ["contextMenus", "storage"],
+  "permissions": ["contextMenus", "storage", "tabs"],
   "background": {
     "service_worker": "background.js"
   },
@@ -194,6 +195,7 @@ We'll build a simple options page for this.
 ### Create the options HTML
 
 ```html
+<!-- options.html -->
 <!DOCTYPE html>
 <html>
   <head>
@@ -220,7 +222,7 @@ We'll build a simple options page for this.
 
       label {
         display: block;
-        font-size: 13px;
+        font-size: 13px
         font-weight: 600;
         margin-bottom: 6px;
       }
@@ -283,7 +285,10 @@ We'll build a simple options page for this.
 
 ### Create the options logic
 
+Open `options.js` and add the following:
+
 ```js
+// options.js
 const apiKeyInput = document.getElementById('apiKey');
 const saveButton = document.getElementById('save');
 const status = document.getElementById('status');
@@ -315,11 +320,16 @@ saveButton.addEventListener('click', () => {
 });
 ```
 
+When the page loads, it reads any previously saved key from storage and
+pre-fills the input so the user doesn't have to re-enter it. When they click
+Save, it validates the input, writes the key to storage, and briefly shows a
+confirmation message.
+
 A few things to notice:
 
 - We use `chrome.storage.local` instead of `localStorage`. The Chrome extension
-  storage API works in service workers (where `localStorage` does not), and
-  it's designed specifically for extensions.
+  storage API works in service workers (where `localStorage` does not), and it's
+  designed specifically for extensions.
 - The key is saved in the user's local extension storage and only sent to the
   Gemini API when making a request. It never touches a third-party server.
 
@@ -341,6 +351,7 @@ right-clicks, and sees a "Create Calendar Event" option.
 Open `background.js` and add the context menu setup:
 
 ```js
+// background.js
 // Create the right-click menu item when the extension is installed
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -360,49 +371,44 @@ chrome.runtime.onInstalled.addListener(() => {
 Now add the click handler that receives the selected text:
 
 ```js
+// background.js
 // Listen for clicks on our context menu item
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'createCalendarEvent') {
     const selectedText = info.selectionText;
+    console.log('Selected text:', selectedText);
 
-    try {
-      await getApiKey();
-    } catch {
-      chrome.runtime.openOptionsPage();
-      return;
-    }
+    // try {
+    //   await getApiKey();
+    // } catch {
+    //   chrome.runtime.openOptionsPage();
+    //   return;
+    // }
 
-    try {
-      const event = await extractEventDetails(selectedText);
-      const calendarUrl = buildCalendarUrl(event);
-      chrome.tabs.create({ url: calendarUrl });
-    } catch (error) {
-      console.error('Failed to create event:', error);
-    }
+    // try {
+    //   const event = await extractEventDetails(selectedText);
+    //   const calendarUrl = buildCalendarUrl(event);
+    //   chrome.tabs.create({ url: calendarUrl });
+    // } catch (error) {
+    //   console.error('Failed to create event:', error);
+    // }
   }
 });
 ```
 
-This is the entire flow of the extension:
-
-1. Get the selected text
-2. Check that the user has configured an API key (if not, open the options page)
-3. Send the text to the Gemini API to extract event details
-4. Build a Google Calendar URL from those details
-5. Open the URL in a new tab
-
-We haven't written `getApiKey`, `extractEventDetails`, or `buildCalendarUrl`
-yet. That's coming next.
+This is the entire flow of the extension — the commented-out code is the full
+implementation, which we'll uncomment as we build out each function in the next
+sections. For now, the `console.log` lets us verify that the click handler is
+firing and the selected text is being captured correctly.
 
 ### Try it out
 
 1. Reload your extension at `chrome://extensions`
 2. Go to any web page and highlight some text
 3. Right-click — you should see "Create Calendar Event" in the context menu
-4. Clicking it will fail for now (the functions don't exist yet), but check
-   the console in the service worker to confirm the click handler fires
+4. Click it and open the service worker console to confirm the selected text is logged
 
-Positive : To see console output from your background script, go to
+**Note**: To see console output from your background script, go to
 `chrome://extensions`, find Quick Event, and click the **"service worker"**
 link. This opens DevTools for the extension's background script.
 
@@ -419,6 +425,7 @@ First, we need a way to retrieve the API key the user saved in the options page.
 Add this helper function to `background.js`:
 
 ```js
+// background.js
 function getApiKey() {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get('geminiApiKey', (data) => {
@@ -436,17 +443,51 @@ function getApiKey() {
 }
 ```
 
+Now that `getApiKey()` is defined, go back to the click handler in `background.js`
+and uncomment the first try/catch block:
+
+```js
+// background.js
+// Listen for clicks on our context menu item
+chrome.contextMenus.onClicked.addListener(async (info) => {
+  if (info.menuItemId === 'createCalendarEvent') {
+    const selectedText = info.selectionText;
+    console.log('Selected text:', selectedText);
+
+    // UNCOMMENT THIS:
+    try {
+      await getApiKey();
+    } catch {
+      chrome.runtime.openOptionsPage();
+      return;
+    }
+
+    // try {
+    //   const event = await extractEventDetails(selectedText);
+    //   const calendarUrl = buildCalendarUrl(event);
+    //   chrome.tabs.create({ url: calendarUrl });
+    // } catch (error) {
+    //   console.error('Failed to create event:', error);
+    // }
+  }
+});
+```
+
+This guards the rest of the handler — if the user hasn't saved an API key yet,
+it opens the options page and stops execution.
+
 ### The Gemini API call
 
-Now add the function that calls the Gemini API. We're using the REST API
+Now add the function that calls the Gemini API to your `background.js`. We're using the REST API
 directly, no SDK needed:
 
 ```js
+// background.js
 async function callGemini(prompt) {
   const apiKey = await getApiKey();
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent`,
     {
       method: 'POST',
       headers: {
@@ -481,8 +522,12 @@ async function callGemini(prompt) {
 
 The important bits:
 
-- **`gemini-2.5-flash`** is Google's fast, capable model. It's available on the
-  free tier and more than powerful enough for text extraction.
+- **`gemini-3.1-flash-lite`** — The Gemini API offers several models that trade
+  off capability, speed, and cost. At one end are the Pro models, which are the
+  most capable but slower and more expensive. At the other end are Flash Lite
+  models, which are optimised for low latency and cost efficiency. For a task
+  like extracting structured data from a short text snippet, a Flash Lite model
+  is more than capable — there's no need to pay for a Pro model.
 - **`temperature: 0`** gives us deterministic, consistent output. This is data
   extraction, not creative writing. A temperature of 0 means the model will
   produce the same answer for the same input.
@@ -492,7 +537,7 @@ The important bits:
 - **`x-goog-api-key`** puts the API key in the request header, not in the URL
   query string. This is the recommended approach.
 
-Positive : We're calling the Gemini API directly from the extension's background
+Positive: We're calling the Gemini API directly from the extension's background
 service worker using `fetch`. No server required. The API key is stored locally
 in the user's browser and sent directly to Google's API over HTTPS. No
 intermediary server ever sees it. This keeps the architecture simple: it's just
@@ -503,6 +548,7 @@ the extension and the API.
 Now add the function that constructs the prompt and parses the result:
 
 ```js
+// background.js
 async function extractEventDetails(text) {
   const prompt = `
 Extract the event details from the following text. Return a JSON object with these fields:
@@ -548,8 +594,8 @@ This prompt is carefully designed. Each decision matters:
    times as written.
 
 4. **`null` for missing fields.** This gives us a consistent data shape. Our
-   code can check for `null` instead of handling missing keys, empty strings,
-   or the model inventing values.
+   code can check for `null` instead of handling missing keys, empty strings, or
+   the model inventing values.
 
 5. **`responseMimeType: 'application/json'`** (in the API call) tells Gemini to
    return valid JSON. Combined with our prompt, this eliminates the need for
@@ -578,6 +624,7 @@ The `dates` parameter uses the format `YYYYMMDDTHHmmss/YYYYMMDDTHHmmss`
 Add the URL builder function to `background.js`:
 
 ```js
+// background.js
 function buildCalendarUrl(event) {
   const url = new URL('https://calendar.google.com/calendar/render');
 
@@ -631,6 +678,36 @@ This split is worth calling out: let AI do what AI is good at (understanding
 natural language, extracting meaning from messy text), and let code do what code
 is good at (formatting strings, building URLs, handling null values).
 
+Now that all three functions are defined, go back to the click handler and
+uncomment the second try/catch block:
+
+```js
+// background.js
+// Listen for clicks on our context menu item
+chrome.contextMenus.onClicked.addListener(async (info) => {
+  if (info.menuItemId === 'createCalendarEvent') {
+    const selectedText = info.selectionText;
+    console.log('Selected text:', selectedText);
+
+    try {
+      await getApiKey();
+    } catch {
+      chrome.runtime.openOptionsPage();
+      return;
+    }
+
+    // UNCOMMENT this:
+    try {
+      const event = await extractEventDetails(selectedText);
+      const calendarUrl = buildCalendarUrl(event);
+      chrome.tabs.create({ url: calendarUrl });
+    } catch (error) {
+      console.error('Failed to create event:', error);
+    }
+  }
+});
+```
+
 ## Try it out
 
 Duration: 3:00
@@ -640,21 +717,20 @@ Your extension is complete. Let's test it end to end.
 1. Reload the extension at `chrome://extensions`
 2. Make sure you've set your API key in the extension options
 3. Go to any web page with event information. Here's one you can try:
-   [Build With AI Ilorin 2026](https://gdg.community.dev/events/details/google-gdg-ilorin-presents-build-with-ai-ilorin-2026/)
+   [Build With AI Onitsha 2026](https://gdg.community.dev/events/details/google-gdg-onitsha-presents-build-with-ai-2026-2nd-edition/)
 4. Highlight the event text
 5. Right-click → **Create Calendar Event**
 6. Google Calendar should open in a new tab with the event details pre-filled!
 
 ### Verify your results
 
-For the Build With AI Ilorin event, check that:
+For the Build With AI Onitsha event, check that:
 
-- The title is "Build With AI Ilorin 2026"
-- The date is March 28, 2026
-- The start time is 09:00
-- The end time is 15:30
-- The location includes "Silver Gate Hotel and Suites, Olorunhoje Street,
-  Ilorin, 240281"
+- The title is "Build With AI 2026 (2nd Edition)"
+- The date is May 9, 2026
+- The start time is 10:00am
+- The end time is 05:00pm
+- The location includes "Innovation Growth Hub, 39 New Market Road, Onitsha, 434212"
 - The description is populated
 
 ### Try different event formats
@@ -669,7 +745,7 @@ Test with different kinds of event text to see how the AI handles variety:
 Any page with event information will work. The AI is surprisingly good at
 picking out the relevant details even when there's a lot of surrounding noise.
 
-Negative : The AI won't always extract every field correctly, especially from
+**Note**: The AI won't always extract every field correctly, especially from
 very informal or ambiguous text. AI is probabilistic, not deterministic. The
 prompt design minimizes errors, but edge cases will always exist.
 

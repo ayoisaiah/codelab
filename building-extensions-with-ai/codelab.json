@@ -3,7 +3,7 @@
   "format": "html",
   "prefix": "https://storage.googleapis.com",
   "mainga": "UA-49880327-14",
-  "updated": "2026-05-09T09:11:14+01:00",
+  "updated": "2026-05-09T11:12:43+01:00",
   "id": "building-extensions-with-ai",
   "duration": 38,
   "title": "Building Browser Extensions with AI",
@@ -18,9 +18,7 @@
     "web",
     "ai"
   ],
-  "tags": [
-    "web"
-  ],
+  "tags": [],
   "feedback": "https://github.com/ayoisaiah/quick-event-extension/issues",
   "url": "building-extensions-with-ai"
 }
