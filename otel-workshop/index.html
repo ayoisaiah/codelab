@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
   <meta name="theme-color" content="#4F7DC9">
   <meta charset="UTF-8">
-  <title>OpenTelemetry Tracing in Node.js</title>
+  <title>Monitoring APIs with OpenTelemetry</title>
   <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
   <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
   <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
@@ -23,10 +23,10 @@
   <google-codelab-analytics gaid="UA-49880327-14" ga4id=""></google-codelab-analytics>
   <google-codelab codelab-gaid=""
                   codelab-ga4id=""
-                  id="otel-tracing-nodejs"
-                  title="OpenTelemetry Tracing in Node.js"
+                  id="otel-workshop"
+                  title="Monitoring APIs with OpenTelemetry"
                   environment="web"
-                  feedback-link="https://github.com/dash0hq/dash0-examples/issues">
+                  feedback-link="">
     
       <google-codelab-step label="Introduction" duration="2">
         <p>Distributed tracing captures the complete journey of a request as it moves through every service it touches. Each operation is recorded as a <strong>span</strong>, including its timing, status, and relevant contextual attributes.</p>
@@ -35,7 +35,7 @@
 <p>As you progress, you&#39;ll use the collected traces to uncover two real performance problems that are invisible in logs.</p>
 <h2 class="checklist" is-upgraded>What you&#39;ll learn</h2>
 <ul class="checklist">
-<li>How OpenTelemetry auto-instrumentation works in Node.js</li>
+<li>How OpenTelemetry auto-instrumentation works</li>
 <li>How to set up the OTel Collector and Jaeger as a trace backend</li>
 <li>How to add manual spans and enrich existing spans with business context</li>
 <li>How to read trace waterfalls to find latency problems</li>
@@ -59,7 +59,7 @@
 <p class="image-container"><img alt="Architecture diagram: Shortener and Redirector services backed by PostgreSQL and Redis" src="img/e2b0d962f4550cde.png"></p>
 <p>This architecture means a single redirect request flows through both services, hitting Redis, PostgreSQL, and an external API along the way — exactly the kind of multi-hop, multi-dependency flow where distributed tracing earns its keep.</p>
 <h2 is-upgraded>Clone and start the services</h2>
-<pre><code language="language-bash" class="language-bash">git clone https://github.com/dash0hq/dash0-examples/
+<pre><code language="language-bash" class="language-bash">git clone https://github.com/ayoisaiah/nodejs-tracing-starter.git
 cd nodejs-tracing-starter
 mv .env.example .env
 docker compose up -d --build

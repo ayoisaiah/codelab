@@ -3,13 +3,13 @@
   "format": "html",
   "prefix": "https://storage.googleapis.com",
   "mainga": "UA-49880327-14",
-  "updated": "2026-07-24T07:50:56+01:00",
-  "id": "otel-tracing-nodejs",
+  "updated": "2026-07-24T09:20:47+01:00",
+  "id": "otel-workshop",
   "duration": 48,
-  "title": "OpenTelemetry Tracing in Node.js",
-  "authors": "Dash0",
+  "title": "Monitoring APIs with OpenTelemetry",
+  "authors": "Ayooluwa Isaiah",
   "summary": "Learn how to instrument a Node.js application with OpenTelemetry. You’ll go from zero visibility to finding two real performance bugs using distributed traces — without changing application code.",
-  "source": "otel-tracing-nodejs.md",
+  "source": "otel-workshop.md",
   "theme": "",
   "status": [
     "published"
@@ -22,6 +22,5 @@
   "tags": [
     "web"
   ],
-  "feedback": "https://github.com/dash0hq/dash0-examples/issues",
-  "url": "otel-tracing-nodejs"
+  "url": "otel-workshop"
 }
