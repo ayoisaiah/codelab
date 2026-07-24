@@ -1,0 +1,510 @@
+
+<!doctype html>
+
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#4F7DC9">
+  <meta charset="UTF-8">
+  <title>OpenTelemetry Tracing in Node.js</title>
+  <link rel="stylesheet" href="//fonts.googleapis.com/css?family=Source+Code+Pro:400|Roboto:400,300,400italic,500,700|Roboto+Mono">
+  <link rel="stylesheet" href="//fonts.googleapis.com/icon?family=Material+Icons">
+  <link rel="stylesheet" href="https://storage.googleapis.com/claat-public/codelab-elements.css">
+  <style>
+    .success {
+      color: #1e8e3e;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <google-codelab-analytics gaid="UA-49880327-14" ga4id=""></google-codelab-analytics>
+  <google-codelab codelab-gaid=""
+                  codelab-ga4id=""
+                  id="otel-tracing-nodejs"
+                  title="OpenTelemetry Tracing in Node.js"
+                  environment="web"
+                  feedback-link="https://github.com/dash0hq/dash0-examples/issues">
+    
+      <google-codelab-step label="Introduction" duration="2">
+        <p>Distributed tracing captures the complete journey of a request as it moves through every service it touches. Each operation is recorded as a <strong>span</strong>, including its timing, status, and relevant contextual attributes.</p>
+<p>OpenTelemetry is the standard framework for producing this data. Its Node.js SDK lets you instrument your application automatically — and start collecting traces with minimal setup.</p>
+<p>In this codelab, you&#39;ll instrument a two-service Node.js application from scratch. You&#39;ll begin with auto-instrumentation to establish baseline visibility, then refine it with environment variables and SDK configuration. Finally, you&#39;ll add manual spans to capture business logic that auto-instrumentation cannot observe.</p>
+<p>As you progress, you&#39;ll use the collected traces to uncover two real performance problems that are invisible in logs.</p>
+<h2 class="checklist" is-upgraded>What you&#39;ll learn</h2>
+<ul class="checklist">
+<li>How OpenTelemetry auto-instrumentation works in Node.js</li>
+<li>How to set up the OTel Collector and Jaeger as a trace backend</li>
+<li>How to add manual spans and enrich existing spans with business context</li>
+<li>How to read trace waterfalls to find latency problems</li>
+<li>How to spot an N+1 query and a phantom cache miss using traces alone</li>
+</ul>
+<h2 is-upgraded>What you&#39;ll need</h2>
+<ul>
+<li>Docker and Docker Compose</li>
+<li>Node.js 24+ and npm</li>
+<li>A terminal and a browser</li>
+<li>Basic familiarity with Express and REST APIs</li>
+</ul>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Set up the demo application" duration="5">
+        <p>The application you&#39;ll instrument is a URL shortener called <strong>Snip</strong>. It consists of two Node.js services backed by PostgreSQL and Redis.</p>
+<p><strong>Shortener</strong> is the public-facing service. It accepts URLs from users, fetches metadata (title and description) from the target page, stores everything in PostgreSQL, caches the mapping in Redis, and serves a web UI. When a user visits a short URL, this service proxies the request to the Redirector.</p>
+<p><strong>Redirector</strong> resolves short codes to original URLs. It checks Redis first, falls back to PostgreSQL on a cache miss, records visit analytics, and returns the original URL to the Shortener.</p>
+<p class="image-container"><img alt="Architecture diagram: Shortener and Redirector services backed by PostgreSQL and Redis" src="img/e2b0d962f4550cde.png"></p>
+<p>This architecture means a single redirect request flows through both services, hitting Redis, PostgreSQL, and an external API along the way — exactly the kind of multi-hop, multi-dependency flow where distributed tracing earns its keep.</p>
+<h2 is-upgraded>Clone and start the services</h2>
+<pre><code language="language-bash" class="language-bash">git clone https://github.com/dash0hq/dash0-examples/
+cd nodejs-tracing-starter
+mv .env.example .env
+docker compose up -d --build
+</code></pre>
+<p>Once all containers are healthy, open <code>http://localhost:3000</code> in your browser to see the Snip UI.</p>
+<p class="image-container"><img alt="Snip UI with the URL input form and empty recent URLs table" src="img/96779b616d1fab74.png"></p>
+<p>Paste a URL like <code>https://opentelemetry.io</code> and click <strong>Shorten</strong>. The app fetches the page title, generates a short code, and displays the short URL.</p>
+<p class="image-container"><img alt="Snip UI after shortening a URL, showing the short URL and page title" src="img/3b496333f0ca4eb6.png"></p>
+<p>Click the short code in the <strong>Recent URLs</strong> table to trigger a redirect. The Shortener proxies the request to the Redirector, which resolves the short code and sends back the original URL.</p>
+<aside class="special"><p> Everything works — but you have zero visibility into how these services interact to produce that result. If a redirect takes 5 seconds instead of 50ms, you can&#39;t tell which operation in the chain caused the delay. You&#39;ll fix that in the next step. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Enable auto-instrumentation" duration="8">
+        <p>Before writing any tracing code, it&#39;s worth understanding how far OpenTelemetry&#39;s auto-instrumentation can take you — for most Node.js applications, it&#39;s surprisingly far.</p>
+<p>OpenTelemetry provides auto-instrumentation libraries for Express, <code>pg</code>, <code>redis</code>, <code>undici</code> (Node&#39;s built-in <code>fetch</code>), and many others. When loaded before your application code, these libraries monkey-patch the modules they target to automatically create spans. Every inbound HTTP request, every database query, every cache command, and every outbound <code>fetch()</code> call gets traced without writing a single line of instrumentation code.</p>
+<p>Auto-instrumentation also handles context propagation across service boundaries. When the Shortener calls <code>fetch()</code> to reach the Redirector, the instrumentation automatically injects a <code>traceparent</code> header into the outbound request. On the Redirector side, the SDK extracts this header and continues the same trace. The result is a single distributed trace spanning both services — with no manual wiring required.</p>
+<h2 is-upgraded>Install the packages</h2>
+<pre><code language="language-bash" class="language-bash">npm install @opentelemetry/api \
+  @opentelemetry/auto-instrumentations-node
+</code></pre>
+<ul>
+<li><code>@opentelemetry/api</code> defines the tracing interfaces (creating spans, setting attributes, propagating context).</li>
+<li><code>@opentelemetry/auto-instrumentations-node</code> bundles the SDK and instrumentation for popular Node.js libraries.</li>
+</ul>
+<h2 is-upgraded>Verify with the console exporter</h2>
+<p>Add the following to your <code>.env</code> file:</p>
+<pre><code language="language-text" class="language-text">OTEL_TRACES_EXPORTER=console
+OTEL_METRICS_EXPORTER=none
+OTEL_LOGS_EXPORTER=none
+NODE_OPTIONS=--import @opentelemetry/auto-instrumentations-node/register
+</code></pre>
+<p>Then reference them in <code>docker-compose.yml</code> for both services. Since each service needs its own <code>OTEL_SERVICE_NAME</code>, that one stays inline:</p>
+<pre><code language="language-yaml" class="language-yaml">services:
+  shortener:
+    environment:
+      OTEL_SERVICE_NAME: shortener
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER}
+      NODE_OPTIONS: ${NODE_OPTIONS}
+  redirector:
+    environment:
+      OTEL_SERVICE_NAME: redirector
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER}
+      OTEL_LOGS_EXPORTER: ${OTEL_LOGS_EXPORTER}
+      NODE_OPTIONS: ${NODE_OPTIONS}
+</code></pre>
+<p><code>NODE_OPTIONS</code> tells Node.js to load the auto-instrumentation module before your application code runs. Setting <code>OTEL_TRACES_EXPORTER</code> to <code>console</code> prints every completed span to stdout.</p>
+<p>Rebuild and restart:</p>
+<pre><code language="language-bash" class="language-bash">docker compose up -d --build
+</code></pre>
+<p>Shorten a URL and follow the redirect, then check the logs:</p>
+<pre><code language="language-bash" class="language-bash">docker compose logs shortener redirector
+</code></pre>
+<p>You should see span objects printed to the terminal — each with a <code>name</code>, <code>traceId</code>, <code>duration</code>, and <code>attributes</code> field. If they&#39;re showing up, auto-instrumentation is working.</p>
+<aside class="special"><p> Check that `service.name` in each span matches `shortener` or `redirector`. Without it, your telemetry lands under `unknown_service:node` — the last thing you want at 2am. </p>
+</aside>
+<aside class="warning"><p> You may notice spans using deprecated attribute names like `http.method` instead of `http.request.method`. Newer instrumentation libraries are migrating to the updated semantic conventions. This doesn&#39;t affect how tracing works, but it matters when querying spans in your backend. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Set up the OTel Collector and Jaeger" duration="7">
+        <p>Console output confirmed that spans are being created. Now you need to send them to a tracing backend so you can explore traces visually.</p>
+<h2 is-upgraded>Create the Collector configuration</h2>
+<p>Create <code>otelcol.yaml</code> at your project root:</p>
+<pre><code language="language-yaml" class="language-yaml">receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp/jaeger, debug]
+</code></pre>
+<p>The Collector listens for OTLP over HTTP on port 4318 and exports to Jaeger over gRPC. The <code>debug</code> exporter prints a summary to stdout — useful for verifying spans are flowing through the pipeline.</p>
+<h2 is-upgraded>Add the Collector and Jaeger to Docker Compose</h2>
+<pre><code language="language-yaml" class="language-yaml">services:
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.148.0
+    volumes:
+      - ./otelcol.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - 4318:4318
+    networks:
+      - app
+
+  jaeger:
+    image: jaegertracing/jaeger:2.16.0
+    ports:
+      - 16686:16686
+      - 4317:4317
+    networks:
+      - app
+</code></pre>
+<h2 is-upgraded>Switch the exporter from console to OTLP</h2>
+<p>Update <code>.env</code>:</p>
+<pre><code language="language-text" class="language-text">OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
+</code></pre>
+<p>Reference the new variable in <code>docker-compose.yml</code> for both services, and add a dependency on the Collector:</p>
+<pre><code language="language-yaml" class="language-yaml">services:
+  shortener:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    depends_on:
+      collector:
+        condition: service_started
+  redirector:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    depends_on:
+      collector:
+        condition: service_started
+</code></pre>
+<p>Rebuild and restart everything:</p>
+<pre><code language="language-bash" class="language-bash">docker compose up -d --build
+</code></pre>
+<p>Shorten some URLs and visit them, then open Jaeger at <code>http://localhost:16686</code>. Select the <strong>shortener</strong> service and click <strong>Find Traces</strong>.</p>
+<p class="image-container"><img alt="Jaeger trace list showing multiple traces for the shortener service" src="img/4482091f18e1f763.png"></p>
+<p>Click on the trace for a redirect request. You should see a distributed trace spanning both services.</p>
+<p class="image-container"><img alt="Jaeger trace detail showing 22 spans across the Shortener and Redirector services" src="img/9852014038f9a85f.png"></p>
+<p>The root span is the Shortener&#39;s GET request. Inside the Redirector&#39;s handler you can see the full resolution sequence: a Redis cache lookup, a PostgreSQL fallback, a Redis SET to re-populate the cache, an outbound call to ip-api.com for geolocation, and a PostgreSQL INSERT to record the visit.</p>
+<p><strong>All of this happened without writing a single line of tracing code.</strong> The auto-instrumentation libraries handled span creation, context propagation, and attribute population for every HTTP request, database query, and Redis command.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Customize the auto-instrumentation" duration="6">
+        <p>The default auto-instrumentation gives you broad coverage, but two things stand out that are worth tuning.</p>
+<h2 is-upgraded>Filter out noisy spans</h2>
+<p>The trace includes spans for low-level operations like <code>dns.lookup</code>, <code>tcp.connect</code>, and <code>pg-pool.connect</code>. For most debugging workflows, these add clutter without diagnostic value.</p>
+<p>The <code>OTEL_NODE_ENABLED_INSTRUMENTATIONS</code> variable lets you whitelist only the instrumentations you want. Add it to <code>.env</code>:</p>
+<pre><code language="language-text" class="language-text">OTEL_NODE_ENABLED_INSTRUMENTATIONS=http,express,pg,redis,undici,router
+</code></pre>
+<p>Reference it in <code>docker-compose.yml</code> for both services:</p>
+<pre><code language="language-yaml" class="language-yaml">OTEL_NODE_ENABLED_INSTRUMENTATIONS: ${OTEL_NODE_ENABLED_INSTRUMENTATIONS}
+</code></pre>
+<p>After restarting, traces in Jaeger will be significantly cleaner — showing only HTTP, Express, PostgreSQL, Redis, and outbound fetch operations.</p>
+<p class="image-container"><img alt="Jaeger trace after filtering: clean waterfall showing only meaningful spans" src="img/30973d180c692c60.png"></p>
+<p>If you prefer a blocklist instead, use <code>OTEL_NODE_DISABLED_INSTRUMENTATIONS</code>.</p>
+<h2 is-upgraded>Customize span names</h2>
+<p>Some spans show only &#34;GET&#34; or &#34;POST&#34; without indicating which endpoint was called. Fixing this requires programmatic SDK configuration.</p>
+<p>Install the additional packages:</p>
+<pre><code language="language-bash" class="language-bash">npm install @opentelemetry/sdk-node \
+  @opentelemetry/exporter-trace-otlp-proto
+</code></pre>
+<p>Create <code>lib/otel.js</code>:</p>
+<pre><code language="language-javascript" class="language-javascript">import { getNodeAutoInstrumentations } from &#34;@opentelemetry/auto-instrumentations-node&#34;;
+import { OTLPTraceExporter } from &#34;@opentelemetry/exporter-trace-otlp-proto&#34;;
+import { NodeSDK } from &#34;@opentelemetry/sdk-node&#34;;
+
+const sdk = new NodeSDK({
+  traceExporter: new OTLPTraceExporter(),
+  instrumentations: [
+    getNodeAutoInstrumentations({
+      &#34;@opentelemetry/instrumentation-undici&#34;: {
+        requestHook(span, request) {
+          const url = new URL(request.origin + request.path);
+          span.updateName(`${request.method} ${url.host}${url.pathname}`);
+        },
+      },
+      &#34;@opentelemetry/instrumentation-http&#34;: {
+        requestHook(span, request) {
+          span.updateName(`${request.method} ${request.path}`);
+        },
+      },
+    }),
+  ],
+});
+
+sdk.start();
+process.on(&#34;SIGTERM&#34;, () =&gt; sdk.shutdown());
+</code></pre>
+<p>The <code>http</code> hook renames inbound server spans from a bare <code>GET</code> to something like <code>GET /resolve/BpW8ZVnQ</code>. The <code>undici</code> hook renames outbound <code>fetch()</code> spans to include the target host and path.</p>
+<aside class="special"><p> The `SIGTERM` handler ensures the SDK flushes any buffered spans before the process exits. Without it, spans still in the export buffer when the process terminates are silently lost. </p>
+</aside>
+<p>Update <code>package.json</code> to use <code>--import</code>:</p>
+<pre><code language="language-json" class="language-json">{
+  &#34;scripts&#34;: {
+    &#34;shortener&#34;: &#34;node --import ./lib/otel.js shortener/index.js&#34;,
+    &#34;redirector&#34;: &#34;node --import ./lib/otel.js redirector/index.js&#34;
+  }
+}
+</code></pre>
+<p>Remove the <code>NODE_OPTIONS</code> line from <code>.env</code> — it&#39;s been superseded by the <code>--import</code> flag. After restarting, both inbound and outbound HTTP spans in Jaeger will carry descriptive names.</p>
+<p class="image-container"><img alt="Jaeger trace with descriptive span names after customization" src="img/4979f28fe646e827.png"></p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Add manual spans for business logic" duration="8">
+        <p>Auto-instrumentation combined with the customizations from the previous step already gives you substantial visibility. But it falls short inside your business logic.</p>
+<p>The metadata extraction in the Shortener, the HTML parsing, the visit recording — these are all invisible in the current traces because no library boundary exists for the auto-instrumentation to hook into. Manual instrumentation fills that gap.</p>
+<h2 is-upgraded>Instrument the metadata extraction function</h2>
+<p>The <code>extractMetadata()</code> function in <code>shortener/metadata.js</code> fetches a target URL, checks the response, and parses the HTML. Several things can go wrong along the way. None of these failures surface in the auto-instrumented trace because they happen inside application logic.</p>
+<p>Replace <code>shortener/metadata.js</code> with the instrumented version:</p>
+<pre><code language="language-javascript" class="language-javascript">import { SpanStatusCode, trace } from &#34;@opentelemetry/api&#34;;
+import * as cheerio from &#34;cheerio&#34;;
+import { logger } from &#34;../lib/logger.js&#34;;
+
+const tracer = trace.getTracer(&#34;shortener.metadata&#34;);
+
+export async function extractMetadata(url) {
+  return tracer.startActiveSpan(&#34;extract-metadata&#34;, async (span) =&gt; {
+    span.setAttribute(&#34;url.full&#34;, url);
+    try {
+      const response = await fetch(url, {
+        headers: { &#34;User-Agent&#34;: &#34;Shortener/1.0&#34; },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      const contentType = response.headers.get(&#34;content-type&#34;) || &#34;&#34;;
+      if (!response.ok || !contentType.includes(&#34;text/html&#34;)) {
+        throw new Error(`Unusable response: ${response.status} ${contentType}`);
+      }
+
+      const html = await response.text();
+      span.setAttribute(&#34;metadata.html_bytes&#34;, html.length);
+
+      const $ = cheerio.load(html);
+      const title =
+        $(&#39;meta[property=&#34;og:title&#34;]&#39;).attr(&#34;content&#34;) ||
+        $(&#34;title&#34;).first().text().trim() ||
+        null;
+      const description =
+        $(&#39;meta[property=&#34;og:description&#34;]&#39;).attr(&#34;content&#34;) ||
+        $(&#39;meta[name=&#34;description&#34;]&#39;).attr(&#34;content&#34;) ||
+        null;
+
+      span.setAttribute(&#34;metadata.has_title&#34;, title !== null);
+      span.setAttribute(&#34;metadata.has_description&#34;, description !== null);
+      return { title, description };
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      logger.error({ err }, &#34;Failed to extract metadata&#34;);
+      return { title: null, description: null };
+    } finally {
+      span.end();
+    }
+  });
+}
+</code></pre>
+<p>A few things to note:</p>
+<ul>
+<li><code>trace.getTracer("shortener.metadata")</code> obtains a tracer scoped to this component. <code>OTEL_SERVICE_NAME</code> identifies <em>which service</em>, the tracer name identifies <em>which component within that service</em>.</li>
+<li><code>tracer.startActiveSpan()</code> makes the new span the active span. Any spans created inside the callback — including the auto-instrumented <code>fetch()</code> span — automatically become children.</li>
+<li>The <code>catch</code> block calls <code>span.setStatus()</code> to mark the span as failed in the trace UI.</li>
+<li>The <code>finally</code> block guarantees <code>span.end()</code> is called exactly once, ensuring the span is always exported.</li>
+</ul>
+<aside class="warning"><p> Do not call `span.end()` on spans owned by auto-instrumentation. The instrumentation ends them when the request completes. Calling `span.end()` yourself closes the span prematurely, before the handler finishes. </p>
+</aside>
+<p>After rebuilding, open the trace for <code>POST /api/shorten</code> in Jaeger. You should see the <code>extract-metadata</code> span nested under the HTTP server span.</p>
+<p class="image-container"><img alt="Jaeger trace showing the new extract-metadata span nested under the HTTP server span" src="img/aab5c1b5ea4257a0.png"></p>
+<p>Expand the <strong>Tags</strong> panel to see the <code>metadata.has_title</code>, <code>metadata.has_description</code>, and <code>metadata.html_bytes</code> attributes.</p>
+<p class="image-container"><img alt="Jaeger span tags showing metadata attributes on the extract-metadata span" src="img/bb3fe501932965ae.png"></p>
+<h2 is-upgraded>Enrich existing auto-instrumented spans</h2>
+<p>You can attach your own attributes to auto-instrumented spans to make them searchable by dimensions that matter to your application.</p>
+<p>In the Shortener&#39;s redirect proxy (<code>GET /:code</code>), add the short code and resolved URL:</p>
+<pre><code language="language-javascript" class="language-javascript">import { trace } from &#34;@opentelemetry/api&#34;;
+
+router.get(&#34;/:code&#34;, async (req, res) =&gt; {
+  const { code } = req.params;
+  try {
+    const response = await fetch(`${REDIRECTOR_URL}/resolve/${code}`, {
+      signal: AbortSignal.timeout(5000),
+      redirect: &#34;manual&#34;,
+    });
+    const body = await response.json();
+    if (!response.ok) return res.status(response.status).json(body);
+
+    const span = trace.getActiveSpan();
+    if (span) {
+      span.setAttribute(&#34;shortener.short_code&#34;, code);
+      span.setAttribute(&#34;shortener.original_url&#34;, body.original_url);
+    }
+    res.redirect(302, body.original_url);
+  } catch (err) {
+    res.status(502).json({ error: &#34;Redirector service unavailable&#34; });
+  }
+});
+</code></pre>
+<p class="image-container"><img alt="Jaeger span showing shortener.short_code and shortener.original_url attributes on the Shortener span" src="img/59cade8afeb5d59c.png"></p>
+<p>In the Redirector&#39;s <code>resolve/:code</code> handler, record whether the cache was hit:</p>
+<pre><code language="language-javascript" class="language-javascript">import { trace } from &#34;@opentelemetry/api&#34;;
+
+router.get(&#34;/resolve/:code&#34;, async (req, res) =&gt; {
+  const { code } = req.params;
+  try {
+    const cached = await redis.get(`urls:${code}`);
+    const span = trace.getActiveSpan();
+    if (span) {
+      span.setAttribute(&#34;shortener.short_code&#34;, code);
+      span.setAttribute(&#34;shortener.cache_hit&#34;, !!cached);
+    }
+    // ...rest of handler
+  } catch (err) {
+    res.status(500).json({ error: &#34;Internal server error&#34; });
+  }
+});
+</code></pre>
+<p class="image-container"><img alt="Jaeger span showing shortener.cache_hit attribute on the Redirector span" src="img/879386ece04d7750.png"></p>
+<aside class="special"><p> The `if (span)` guard is a defensive pattern worth adopting. `getActiveSpan()` returns `undefined` if the SDK isn&#39;t initialized, so the guard prevents your application from crashing when tracing is absent or disabled. </p>
+</aside>
+<p>The <code>shortener.cache_hit</code> attribute is particularly valuable — it tells you immediately whether a redirect was served from Redis or fell back to PostgreSQL. You&#39;ll see exactly why in the next step.</p>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="Debug your services with traces" duration="10">
+        <p>The instrumentation you&#39;ve built gives you visibility into the structure and timing of every request. Now put that visibility to work.</p>
+<p>The demo application has two subtle performance problems baked in that are <strong>invisible from the outside</strong> — no errors, no crashes, everything functions correctly. Tracing is how you&#39;ll find them.</p>
+<h2 is-upgraded>Bug 1: The N+1 query</h2>
+<p>Open <code>http://localhost:3000</code> to load the Snip UI. It loads normally and shows all your shortened URLs. Nothing looks wrong.</p>
+<p>Open Jaeger, find the trace for the <code>GET /api/urls</code> request, and look at the span timeline.</p>
+<p class="image-container"><img alt="Jaeger trace for GET /api/urls showing a cascade of sequential PostgreSQL spans — the N+1 query pattern" src="img/6613881519048288.png"></p>
+<p>Instead of one or two database spans, there&#39;s a cascade of <code>pg-pool.connect</code>, <code>pg.connect</code>, and <code>pg.query:SELECT</code> spans repeating in sequence. Each URL in the list triggers its own connection acquisition and count query.</p>
+<p>Here&#39;s the code causing it:</p>
+<pre><code language="language-javascript" class="language-javascript">// shortener/routes.js
+router.get(&#34;/api/urls&#34;, async (_req, res) =&gt; {
+  const result = await db.query(
+    &#34;SELECT short_code, original_url, title, description, created_at FROM urls ORDER BY created_at DESC LIMIT 20&#34;,
+  );
+
+  // Fetches visit count for each URL individually
+  const rows = await Promise.all(
+    result.rows.map(async (row) =&gt; {
+      const visits = await db.query(
+        &#34;SELECT COUNT(*) FROM visits WHERE short_code = $1&#34;,
+        [row.short_code],
+      );
+      return { ...row, visit_count: parseInt(visits.rows[0].count, 10) };
+    }),
+  );
+
+  res.json(rows);
+});
+</code></pre>
+<p>In your PostgreSQL logs, every query looks successful. But the trace tells a different story: the waterfall of sequential queries adds up to a total latency that is the <em>sum</em> of all of them, not the cost of any single one.</p>
+<p><strong>The fix</strong> — collapse the N+1 into a single <code>LEFT JOIN</code>:</p>
+<pre><code language="language-javascript" class="language-javascript">router.get(&#34;/api/urls&#34;, async (_req, res) =&gt; {
+  const result = await db.query(
+    `SELECT u.short_code, u.original_url,
+            u.title, u.description,
+            u.created_at,
+            COUNT(v.id)::int AS visit_count
+     FROM urls u
+     LEFT JOIN visits v ON u.short_code = v.short_code
+     GROUP BY u.id
+     ORDER BY u.created_at DESC
+     LIMIT 20`,
+  );
+  res.json(result.rows);
+});
+</code></pre>
+<p>After applying the fix and restarting, the same request produces a trace with a single PostgreSQL span and the total duration drops accordingly.</p>
+<p class="image-container"><img alt="Jaeger trace for GET /api/urls after the fix — a single PostgreSQL span replaces the cascade" src="img/c414191f707539b6.png"></p>
+<h2 is-upgraded>Bug 2: The phantom cache miss</h2>
+<p>Create a short URL, then visit it immediately. Open Jaeger and look at the <code>shortener.cache_hit</code> attribute on the Redirector&#39;s <code>request handler - /resolve/:code</code> span.</p>
+<p class="image-container"><img alt="Jaeger span showing shortener.cache_hit: false on the first redirect after URL creation" src="img/22bf1f64e45af059.png"></p>
+<p>It should be <code>true</code> — you just created this URL and the Shortener cached it in Redis. But it reads <code>false</code>. Visit the same URL a second time and it reads <code>true</code>.</p>
+<p>So the cache works on subsequent requests, but the very first redirect after creation always misses. Something is wrong between the write and the first read.</p>
+<p>Check the Redis key the Shortener writes on URL creation:</p>
+<pre><code language="language-javascript" class="language-javascript">// shortener/routes.js
+await redis.set(`url:${shortCode}`, url, { EX: 86400 });
+</code></pre>
+<p>Now check what the Redirector reads:</p>
+<pre><code language="language-javascript" class="language-javascript">// redirector/routes.js
+const cached = await redis.get(`urls:${code}`);
+</code></pre>
+<p>Spot it? <code>url:</code> vs <code>urls:</code>. On the first redirect, the Redirector reads from a key that was never written, falls back to PostgreSQL, then writes its own entry under the <code>urls:</code> prefix. Subsequent redirects hit <em>that</em> entry and appear to work fine — which is exactly why this bug is so easy to miss.</p>
+<p><strong>The fix</strong> — use the correct key format in the Redirector:</p>
+<pre><code language="language-javascript" class="language-javascript">// redirector/routes.js
+const cached = await redis.get(`url:${code}`);
+// ...
+await redis.set(`url:${code}`, originalUrl, { EX: 86400 });
+</code></pre>
+<p>After rebuilding, create a new short URL and visit it immediately. The first visit should now show <code>shortener.cache_hit: true</code>, and the PostgreSQL <code>SELECT</code> span disappears.</p>
+<p class="image-container"><img alt="Jaeger span showing shortener.cache_hit: true after the fix" src="img/ed728d93f55dcd9a.png"></p>
+<aside class="special"><p> **What logs alone would have told you:** the N+1 query logged a series of successful database operations — nothing looked wrong. The cache miss logged nothing at all, because from the application&#39;s perspective it wasn&#39;t an error. Tracing revealed both problems by showing how operations relate to each other in time and across services, not just whether each individual operation succeeded. </p>
+</aside>
+
+
+      </google-codelab-step>
+    
+      <google-codelab-step label="What&#39;s next" duration="2">
+        <p>You started this codelab with a working application and zero observability. By the end, you&#39;ve:</p>
+<ul>
+<li>Added auto-instrumentation that captures every HTTP request, database query, and cache command across two services</li>
+<li>Customized span names to make traces readable at a glance</li>
+<li>Created manual spans that expose business logic the auto-instrumentation can&#39;t reach</li>
+<li>Added custom attributes that make spans queryable by business dimensions</li>
+<li>Used the resulting traces to find two performance bugs that no amount of logging would have revealed</li>
+</ul>
+<p>Everything you&#39;ve built here uses open standards. The traces export over OTLP, the attributes follow OpenTelemetry semantic conventions, and the SDK configuration is portable across backends.</p>
+<h2 is-upgraded>Sampling</h2>
+<p>This codelab samples 100% of traces, which is appropriate for development but not for most production environments. OpenTelemetry supports several <a href="https://opentelemetry.io/docs/concepts/sampling/" target="_blank">sampling strategies</a> configurable through the SDK and Collector. Getting sampling right is essential for controlling costs while still capturing the traces that matter.</p>
+<h2 is-upgraded>Further reading</h2>
+<ul>
+<li><a href="https://www.dash0.com/guides/opentelemetry-environment-variables" target="_blank">Configuring OTel with environment variables</a> — the full reference for <code>OTEL_*</code> vars</li>
+<li><a href="https://www.dash0.com/guides/opentelemetry-collector" target="_blank">Building telemetry pipelines with the OTel Collector</a> — receivers, processors, exporters</li>
+<li><a href="https://www.dash0.com/guides/opentelemetry-logging-python" target="_blank">Bridging Python&#39;s logging module to OTel</a> — log-trace correlation</li>
+<li><a href="https://opentelemetry.io/docs/specs/semconv/" target="_blank">OpenTelemetry semantic conventions</a> — the shared attribute vocabulary</li>
+</ul>
+<h2 is-upgraded>Send traces to a production backend</h2>
+<p>Switching from Jaeger to any OTLP-compatible backend is a Collector config change — no application code changes required.</p>
+<pre><code language="language-yaml" class="language-yaml">exporters:
+  otlp/my-backend:
+    endpoint: https://your-backend-endpoint
+    headers:
+      Authorization: &#34;Bearer ${AUTH_TOKEN}&#34;
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp/my-backend]
+</code></pre>
+
+
+      </google-codelab-step>
+    
+  </google-codelab>
+
+  <script src="https://storage.googleapis.com/claat-public/native-shim.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/custom-elements.min.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/prettify.js"></script>
+  <script src="https://storage.googleapis.com/claat-public/codelab-elements.js"></script>
+  <script src="//support.google.com/inapp/api.js"></script>
+
+</body>
+</html>
